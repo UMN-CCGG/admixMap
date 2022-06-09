@@ -37,17 +37,30 @@ opt <- parse_args(OptionParser(option_list=option_list))
 ################### END: Read in arguments #########################
 
 ######################### Define functions #########################
-
 readMSP = function(filename, cases=NA, filter_case = FALSE, label_case = TRUE){
-  q1h = read.table(filename, header=F, comment.char = "", nrows=2, fill = TRUE, stringsAsFactors = FALSE) #First two lines of msp file are header
-  q1p = q1h[1,] %>% pivot_longer(colnames(q1h)) %>% filter(value != "") %>% separate(value, c("Pop","anc")) %>% filter(row_number()>2) #First line of header contains the key for different ancestries that were inferred
-  q1h = q1h[2,-6] # Remove column for 'n' 
-  q1 = read.table(filename, header=F, comment.char = "", skip = 2) #Read in main body of .msp file
-  colnames( q1 ) <- unlist(q1h)
-  q1 %<>% pivot_longer(-c(`#chm`,spos,epos,sgpos,egpos,snps), names_to="sample", values_to="anc")
-  q1 %<>% separate(sample, c("tmp.sample","hap"),"[.]") %>% mutate(chm = `#chm`, sample = str_replace(tmp.sample, "#", "")) %>% select(-c(`#chm`, tmp.sample)) #Individuals have an ancestry call for each haplotype
-  q1 %<>% group_by(chm,spos,epos,sgpos,egpos,snps, sample) %>% count(anc) %>% ungroup() %>% mutate(anc = as.character(anc)) %>% left_join(q1p, by = "anc") %>% select(-c(anc,name)) %>% pivot_wider(id_cols = c(chm,spos,epos,sgpos, egpos,snps,sample), names_from=Pop, values_from=n, values_fill = list(n=0)) #Use ancestry key to relabel values with character string (e.g. 1=AMR)
-  return(q1)
+q1h = read.table(filename, header=F, comment.char = "", nrows=2, fill = TRUE, stringsAsFactors = FALSE) #First two lines of msp file are header
+q1p <- q1h[1,] %>%
+    mutate_all(as.character) %>%
+    pivot_longer(cols = colnames(q1h)) %>%
+    filter(value != "") %>%
+    filter(row_number()>2) %>%
+    separate(col = value, into = c("Pop", "anc"), sep = "=")
+q1h <-  q1h[2,-6] # Remove column for 'n' 
+q1 = read.table(filename, header=F, comment.char = "", skip = 2) #Read in main body of .msp file
+colnames(q1) <- unlist(q1h)
+q2 <- q1 %>% 
+    pivot_longer(-c(`#chm`,spos,epos,sgpos,egpos,snps), names_to="sample", values_to="anc") %>%
+    separate(col = sample, into = c("sample","hap"),"[.]") %>%
+    rename("chm" = "#chm") %>%
+    mutate(sample = str_remove_all(sample, "#")) %>% 
+    group_by(chm,spos,epos,sgpos,egpos,snps, sample) %>% 
+    count(anc) %>% 
+    ungroup() %>% 
+    mutate(anc = as.character(anc)) %>% 
+    left_join(q1p, by = "anc") %>% 
+    select(-c(anc,name)) %>% 
+    pivot_wider(id_cols = c(chm,spos,epos,sgpos, egpos,snps,sample), names_from=Pop, values_from=n, values_fill = list(n=0)) #Use ancestry key to relabel values with character string (e.g. 1=AMR)
+return(q2)
 }
 
 preMunge = function(inFile, samples, globalAncestry, fam_pheno, other_pheno, outPre){
